@@ -1,0 +1,196 @@
+// Web Audio API sounds - pure client-side, zero external dependency, guaranteed to never fail
+
+class SoundEngine {
+  private ctx: AudioContext | null = null;
+  private ambientSource: AudioNode | null = null;
+  private ambientGain: GainNode | null = null;
+  private isAmbientPlaying: boolean = false;
+
+  private getContext(): AudioContext | null {
+    if (typeof window === 'undefined') return null;
+    if (!this.ctx) {
+      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (AudioCtx) {
+        this.ctx = new AudioCtx();
+      }
+    }
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume();
+    }
+    return this.ctx;
+  }
+
+  playCorrect(): void {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      
+      const now = ctx.currentTime;
+      osc.frequency.setValueAtTime(587.33, now); // D5
+      osc.frequency.setValueAtTime(880, now + 0.08); // A5
+
+      gain.gain.setValueAtTime(0.15, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.36);
+    } catch {
+      // Audio context might be restricted before user gesture
+    }
+  }
+
+  playIncorrect(): void {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+
+      const now = ctx.currentTime;
+      osc.frequency.setValueAtTime(260, now);
+      osc.frequency.setValueAtTime(220, now + 0.1);
+
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.31);
+    } catch {
+      // Ignore
+    }
+  }
+
+  playCelebration(): void {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+      const now = ctx.currentTime;
+
+      notes.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+
+        gain.gain.setValueAtTime(0.15, now + idx * 0.08);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.4);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(now + idx * 0.08);
+        osc.stop(now + idx * 0.08 + 0.45);
+      });
+    } catch {
+      // Ignore
+    }
+  }
+
+  playBell(): void {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      const now = ctx.currentTime;
+      osc.frequency.setValueAtTime(740, now);
+
+      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.2);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 1.25);
+    } catch {
+      // Ignore
+    }
+  }
+
+  startAmbient(soundType: 'rain' | 'whitenoise' | 'focuswaves'): void {
+    this.stopAmbient();
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    try {
+      const bufferSize = ctx.sampleRate * 2;
+      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const output = buffer.getChannelData(0);
+
+      if (soundType === 'rain') {
+        // Brown noise / pink noise filtered for rain sound
+        let lastOut = 0.0;
+        for (let i = 0; i < bufferSize; i++) {
+          const white = Math.random() * 2 - 1;
+          output[i] = (lastOut + 0.02 * white) / 1.02;
+          lastOut = output[i];
+          output[i] *= 3.5;
+        }
+      } else if (soundType === 'whitenoise') {
+        for (let i = 0; i < bufferSize; i++) {
+          output[i] = (Math.random() * 2 - 1) * 0.2;
+        }
+      } else {
+        // Binaural / gentle warm focus wave
+        for (let i = 0; i < bufferSize; i++) {
+          const t = i / ctx.sampleRate;
+          output[i] = Math.sin(2 * Math.PI * 136.1 * t) * 0.15; // Om frequency
+        }
+      }
+
+      const whiteNoise = ctx.createBufferSource();
+      whiteNoise.buffer = buffer;
+      whiteNoise.loop = true;
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = soundType === 'rain' ? 800 : (soundType === 'whitenoise' ? 1200 : 400);
+
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+
+      whiteNoise.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+
+      whiteNoise.start();
+      this.ambientSource = whiteNoise;
+      this.ambientGain = gain;
+      this.isAmbientPlaying = true;
+    } catch {
+      // Ignore
+    }
+  }
+
+  stopAmbient(): void {
+    if (this.ambientSource) {
+      try {
+        (this.ambientSource as AudioBufferSourceNode).stop();
+        this.ambientSource.disconnect();
+      } catch {
+        // Ignore
+      }
+      this.ambientSource = null;
+    }
+    this.isAmbientPlaying = false;
+  }
+
+  getIsAmbientPlaying(): boolean {
+    return this.isAmbientPlaying;
+  }
+}
+
+export const soundEngine = new SoundEngine();

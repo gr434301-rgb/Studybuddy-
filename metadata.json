@@ -1,0 +1,6 @@
+{
+  "name": "EduPulse Class 10",
+  "description": "Smart Class 10 learning and board exam practice platform featuring NCERT Hub, 50-question daily streaks, study timer, formula sheets, and leaderboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
